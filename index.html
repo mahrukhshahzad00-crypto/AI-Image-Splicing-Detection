@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Splicing Detector</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem 4rem;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.3rem;
+    background: linear-gradient(135deg, #f87171, #fb923c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    font-size: 0.9rem;
+    color: #64748b;
+    margin-bottom: 2.5rem;
+  }
+
+  /* Drop zone */
+  #drop-zone {
+    width: 100%;
+    max-width: 520px;
+    border: 2px dashed #334155;
+    border-radius: 16px;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  #drop-zone:hover, #drop-zone.drag-over {
+    border-color: #f87171;
+    background: rgba(248,113,113,0.05);
+  }
+  #drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  #drop-zone .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+  #drop-zone p   { color: #94a3b8; font-size: 0.9rem; }
+  #drop-zone p span { color: #f87171; font-weight: 600; }
+
+  /* Preview thumbnail in drop zone */
+  #thumb {
+    width: 96px; height: 96px; object-fit: cover;
+    border-radius: 10px; margin: 1rem auto 0;
+    display: none;
+    border: 2px solid #334155;
+  }
+
+  /* Analyse button */
+  #analyse-btn {
+    margin-top: 1.25rem;
+    padding: 0.7rem 2.2rem;
+    background: linear-gradient(135deg, #f87171, #fb923c);
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.15s;
+    display: none;
+  }
+  #analyse-btn:hover   { opacity: 0.88; transform: translateY(-1px); }
+  #analyse-btn:active  { transform: translateY(0); }
+  #analyse-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* Spinner */
+  .spinner {
+    display: none;
+    width: 28px; height: 28px;
+    border: 3px solid #334155;
+    border-top-color: #f87171;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 1.25rem auto 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Score badge */
+  #score-wrap {
+    display: none;
+    margin-top: 2rem;
+    text-align: center;
+  }
+  #score-ring {
+    width: 130px; height: 130px;
+    border-radius: 50%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    margin: 0 auto 0.5rem;
+    font-weight: 700;
+    font-size: 2rem;
+    border: 6px solid;
+    transition: border-color 0.4s, color 0.4s;
+  }
+  #score-ring small { font-size: 0.75rem; font-weight: 400; opacity: 0.7; }
+  #verdict { font-size: 1rem; color: #94a3b8; }
+
+  /* Result grid */
+  #results {
+    display: none;
+    margin-top: 2rem;
+    width: 100%;
+    max-width: 900px;
+  }
+  #results h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 1rem;
+    text-align: center;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+  .card {
+    background: #1e2433;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid #2d3748;
+  }
+  .card img {
+    width: 100%; display: block;
+    aspect-ratio: 1;
+    object-fit: contain;
+    background: #0f1117;
+  }
+  .card-label {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  /* Error */
+  #error-msg {
+    display: none;
+    margin-top: 1rem;
+    color: #f87171;
+    font-size: 0.9rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>Splicing Detector</h1>
+<p class="subtitle">Upload an image — the model will localize any spliced region</p>
+
+<div id="drop-zone">
+  <input type="file" id="file-input" accept="image/*">
+  <div class="icon">🖼️</div>
+  <p>Drag &amp; drop an image or <span>browse</span></p>
+  <img id="thumb" alt="preview">
+</div>
+
+<button id="analyse-btn">Analyse</button>
+<div class="spinner" id="spinner"></div>
+<p id="error-msg"></p>
+
+<div id="score-wrap">
+  <div id="score-ring">
+    <span id="score-val">—</span>
+    <small>forgery score</small>
+  </div>
+  <p id="verdict"></p>
+</div>
+
+<div id="results">
+  <h2>Pixel-level analysis</h2>
+  <div class="grid">
+    <div class="card">
+      <img id="img-original" alt="Original">
+      <div class="card-label">Original (resized)</div>
+    </div>
+    <div class="card">
+      <img id="img-mask" alt="Binary mask">
+      <div class="card-label">Binary mask (&gt;0.5)</div>
+    </div>
+    <div class="card">
+      <img id="img-heatmap" alt="Probability heatmap">
+      <div class="card-label">Probability heatmap</div>
+    </div>
+    <div class="card">
+      <img id="img-overlay" alt="Overlay">
+      <div class="card-label">Overlay (red = spliced)</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const dropZone   = document.getElementById("drop-zone");
+  const fileInput  = document.getElementById("file-input");
+  const thumb      = document.getElementById("thumb");
+  const analyseBtn = document.getElementById("analyse-btn");
+  const spinner    = document.getElementById("spinner");
+  const errorMsg   = document.getElementById("error-msg");
+  const scoreWrap  = document.getElementById("score-wrap");
+  const scoreRing  = document.getElementById("score-ring");
+  const scoreVal   = document.getElementById("score-val");
+  const verdict    = document.getElementById("verdict");
+  const results    = document.getElementById("results");
+
+  let selectedFile = null;
+
+  // Drag styling
+  dropZone.addEventListener("dragover",  e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault(); dropZone.classList.remove("drag-over");
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) setFile(fileInput.files[0]);
+  });
+
+  function setFile(f) {
+    selectedFile = f;
+    const url = URL.createObjectURL(f);
+    thumb.src = url; thumb.style.display = "block";
+    analyseBtn.style.display = "inline-block";
+    // reset
+    results.style.display = "none";
+    scoreWrap.style.display = "none";
+    errorMsg.style.display = "none";
+  }
+
+  analyseBtn.addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    analyseBtn.disabled = true;
+    spinner.style.display = "block";
+    errorMsg.style.display = "none";
+    results.style.display  = "none";
+    scoreWrap.style.display = "none";
+
+    const fd = new FormData();
+    fd.append("image", selectedFile);
+
+    try {
+      const res  = await fetch("/predict", { method: "POST", body: fd });
+      const data = await res.json();
+
+      if (data.error) throw new Error(data.error);
+
+      const s = data.score;
+      scoreVal.textContent = s + "%";
+
+      // Color ring based on score
+      let col = s > 70 ? "#f87171" : s > 40 ? "#fb923c" : "#34d399";
+      scoreRing.style.borderColor = col;
+      scoreRing.style.color = col;
+      verdict.textContent = s > 70 ? "Likely spliced" : s > 40 ? "Possibly spliced" : "Looks authentic";
+
+      document.getElementById("img-original").src = "data:image/png;base64," + data.original;
+      document.getElementById("img-mask").src      = "data:image/png;base64," + data.mask;
+      document.getElementById("img-heatmap").src   = "data:image/png;base64," + data.heatmap;
+      document.getElementById("img-overlay").src   = "data:image/png;base64," + data.overlay;
+
+      scoreWrap.style.display = "block";
+      results.style.display   = "block";
+    } catch (err) {
+      errorMsg.textContent = err.message || "Something went wrong.";
+      errorMsg.style.display = "block";
+    } finally {
+      analyseBtn.disabled = false;
+      spinner.style.display = "none";
+    }
+  });
+</script>
+
+</body>
+</html>
